@@ -325,7 +325,7 @@ class HostsEditorWindow(tk.Toplevel):
 
         close_btn = ttk.Button(btn_frame, text="Закрыть", command=self.destroy)
         close_btn.pack(side=tk.RIGHT, ipady=4)
-    def load_hosts(self):
+            def load_hosts(self):
         try:
             with open(HOSTS_PATH, "r", encoding="utf-8", errors="replace") as f:
                 content = f.read()
@@ -335,6 +335,7 @@ class HostsEditorWindow(tk.Toplevel):
             messagebox.showerror(
                 "Ошибка чтения", f"Не удалось открыть файл hosts:\n{e}"
             )
+
     def save_hosts(self):
         content = self.text_area.get("1.0", tk.END)
         if content.endswith("\n"):
@@ -499,7 +500,7 @@ class ZapretLauncherApp:
                     text="● ОСТАНОВЛЕН", foreground="#c92a2a"
                 )
             time.sleep(1.5)
-            
+
     def start_strategy(self):
         selected = self.strategy_var.get()
         bat_path = os.path.join(self.base_dir, selected)
@@ -514,11 +515,9 @@ class ZapretLauncherApp:
         time.sleep(0.5)
 
         try:
-            # Читаем содержимое выбранного .bat файла
             with open(bat_path, "r", encoding="utf-8", errors="ignore") as f:
                 bat_content = f.read()
 
-            # Заменяем команду 'start ' на 'start /B ', чтобы winws.exe не открывал черное окно
             hidden_content = re.sub(
                 r"(?i)\bstart\s+(?!/)", "start /B ", bat_content
             )
@@ -542,3 +541,50 @@ class ZapretLauncherApp:
             )
         except Exception as e:
             messagebox.showerror("Ошибка запуска", str(e))
+
+    def stop_zapret(self, silent=False):
+        try:
+            run_hidden(["sc", "stop", "zapret"])
+            run_hidden(["taskkill", "/F", "/IM", "winws.exe"])
+        except Exception as e:
+            if not silent:
+                messagebox.showerror("Ошибка остановки", str(e))
+
+    def open_service(self):
+        service_path = os.path.join(self.base_dir, "service.bat")
+        if os.path.exists(service_path):
+            subprocess.Popen(
+                ["cmd.exe", "/c", "start", "", service_path], cwd=self.base_dir
+            )
+        else:
+            messagebox.showwarning("Внимание", "Файл service.bat не найден.")
+
+    def open_lists(self):
+        lists_path = os.path.join(self.base_dir, "lists")
+        if os.path.exists(lists_path):
+            os.startfile(lists_path)
+        else:
+            messagebox.showwarning("Внимание", "Папка lists не найдена.")
+
+    def open_hosts_editor(self):
+        HostsEditorWindow(self.root)
+
+    def open_dns_settings(self):
+        DnsSettingsWindow(self.root)
+
+    def on_closing(self):
+        self.is_running = False
+        self.root.destroy()
+
+
+if __name__ == "__main__":
+    if not is_admin():
+        run_as_admin()
+        sys.exit(0)
+
+    root = tk.Tk()
+    app = ZapretLauncherApp(root)
+    root.protocol("WM_DELETE_WINDOW", app.on_closing)
+    root.mainloop()
+
+
