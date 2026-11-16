@@ -1,14 +1,23 @@
 import ctypes
+import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import threading
 import time
 import tkinter as tk
 from tkinter import messagebox, ttk
+import urllib.request
+import webbrowser
 import winreg
 
+from PIL import Image, ImageDraw
+import pystray
+
+APP_VERSION = "1.0"
+GITHUB_REPO = "stepanchick646464-afk/zapret-gui"
 HOSTS_PATH = r"C:\Windows\System32\drivers\etc\hosts"
 
 DNS_PRESETS = {
@@ -36,11 +45,35 @@ LANGS = {
         "no_scripts": "Скрипты запуска не найдены",
         "btn_start": "▶ Запустить",
         "btn_stop": "⏹ Остановить",
-        "tools_box": "Инструменты, DNS и файлы",
-        "btn_service": "Открыть service.bat",
-        "btn_lists": "Папка со списками",
-        "btn_hosts": "📝 Редактор файла hosts (Windows)",
-        "btn_dns": "🌐 Настройка DNS (AdGuard, Cloudflare и др.)",
+        "btn_auto": "🔍 Автоподбор",
+        "btn_auto_stop": "⏹ Стоп подбор",
+        "btn_ping": "📶 Пинг / Связь",
+        "auto_testing": "Проверка [{idx}/{total}]: {name}...",
+        "auto_found": "Найдена рабочая стратегия:\n{name}",
+        "auto_not_found": "Ни одна стратегия не прошла проверку связи.",
+        "auto_stopped": "Автоподбор остановлен пользователем.",
+        "autostart_box": "Автоматизация и настройки",
+        "chk_win_start": "Запускать лаунчер вместе с Windows (в трей)",
+        "chk_auto_bypass": "Автоматически запускать обход при старте",
+        "tools_box": "Инструменты, списки и сеть",
+        "btn_lists_edit": "📋 Редактор списков (lists)",
+        "btn_lists_dir": "📁 Папка списков",
+        "btn_hosts": "📝 Редактор hosts",
+        "btn_dns": "🌐 Настройка DNS",
+        "btn_service": "⚙️ service.bat",
+        "btn_update": "🔄 Обновления (v1.0)",
+        "update_avail": "🆕 Доступна v{ver}!",
+        "update_latest": "У вас установлена актуальная версия ({ver}).",
+        "update_ask": "Доступна новая версия v{ver}!\nОткрыть страницу загрузки на GitHub?",
+        "update_err": "Не удалось проверить обновления с GitHub.",
+        "tray_open": "Открыть окно",
+        "tray_start": "Запустить обход",
+        "tray_stop": "Остановить обход",
+        "tray_exit": "Выход",
+        "lists_title": "Редактор списков доменов",
+        "lists_select": "Выберите файл списка:",
+        "lists_save": "💾 Сохранить и перезапустить обход",
+        "lists_saved_msg": "Список сохранен! Если обход был активен, он перезапущен.",
         "err_title": "Ошибка",
         "warn_title": "Внимание",
         "done_title": "Готово",
@@ -49,6 +82,11 @@ LANGS = {
         "err_stop": "Ошибка остановки",
         "warn_no_service": "Файл управления службой не найден.",
         "warn_no_lists": "Папка со списками не найдена.",
+        "ping_title": "Пинг и проверка доступности",
+        "ping_btn_run": "🔄 Проверить сейчас",
+        "ping_checking": "Проверка...",
+        "ping_ok": "Доступен ({ms} мс)",
+        "ping_fail": "Недоступен (Таймаут)",
         "hosts_title": "Редактор системного файла hosts",
         "hosts_path_info": "Путь: {path} (изменения применяются сразу)",
         "hosts_save": "💾 Сохранить и обновить DNS",
@@ -89,11 +127,35 @@ LANGS = {
         "no_scripts": "No launch scripts found",
         "btn_start": "▶ Start",
         "btn_stop": "⏹ Stop",
-        "tools_box": "Tools, DNS & Files",
-        "btn_service": "Open service.bat",
-        "btn_lists": "Lists Folder",
-        "btn_hosts": "📝 Edit Windows hosts File",
-        "btn_dns": "🌐 DNS Settings (AdGuard, Cloudflare, etc.)",
+        "btn_auto": "🔍 Auto-Select",
+        "btn_auto_stop": "⏹ Stop Search",
+        "btn_ping": "📶 Ping / Test",
+        "auto_testing": "Testing [{idx}/{total}]: {name}...",
+        "auto_found": "Working strategy found:\n{name}",
+        "auto_not_found": "No working strategy found during test.",
+        "auto_stopped": "Auto-search stopped by user.",
+        "autostart_box": "Automation & Startup",
+        "chk_win_start": "Run launcher at Windows startup (minimized to tray)",
+        "chk_auto_bypass": "Auto-start bypass when launcher opens",
+        "tools_box": "Tools, Lists & Network",
+        "btn_lists_edit": "📋 Edit Domain Lists",
+        "btn_lists_dir": "📁 Lists Folder",
+        "btn_hosts": "📝 Edit hosts",
+        "btn_dns": "🌐 DNS Settings",
+        "btn_service": "⚙️ service.bat",
+        "btn_update": "🔄 Updates (v1.0)",
+        "update_avail": "🆕 v{ver} Available!",
+        "update_latest": "You are using the latest version ({ver}).",
+        "update_ask": "New version v{ver} is available!\nOpen GitHub download page?",
+        "update_err": "Failed to check updates from GitHub.",
+        "tray_open": "Open Window",
+        "tray_start": "Start Bypass",
+        "tray_stop": "Stop Bypass",
+        "tray_exit": "Exit",
+        "lists_title": "Domain Lists Editor",
+        "lists_select": "Select list file:",
+        "lists_save": "💾 Save & Restart Bypass",
+        "lists_saved_msg": "List saved! Active bypass has been restarted.",
         "err_title": "Error",
         "warn_title": "Warning",
         "done_title": "Done",
@@ -102,6 +164,11 @@ LANGS = {
         "err_stop": "Stop Error",
         "warn_no_service": "Service management script not found.",
         "warn_no_lists": "Lists folder not found.",
+        "ping_title": "Ping & Connection Test",
+        "ping_btn_run": "🔄 Test Now",
+        "ping_checking": "Testing...",
+        "ping_ok": "Online ({ms} ms)",
+        "ping_fail": "Unreachable (Timeout)",
         "hosts_title": "System hosts File Editor",
         "hosts_path_info": "Path: {path} (changes apply immediately)",
         "hosts_save": "💾 Save & Flush DNS",
@@ -201,6 +268,266 @@ def run_hidden(cmd_list):
         encoding="cp866",
         errors="ignore",
     )
+
+
+def set_windows_autostart(enable):
+    task_name = "ZapretUniversalGUI_AutoStart"
+    exe_path = (
+        sys.executable
+        if getattr(sys, "frozen", False)
+        else os.path.abspath(__file__)
+    )
+    if enable:
+        cmd = [
+            "schtasks",
+            "/Create",
+            "/TN",
+            task_name,
+            "/TR",
+            f'"{exe_path}" --tray',
+            "/SC",
+            "ONLOGON",
+            "/RL",
+            "HIGHEST",
+            "/F",
+        ]
+        run_hidden(cmd)
+    else:
+        run_hidden(["schtasks", "/Delete", "/TN", task_name, "/F"])
+
+
+def check_url_ping(url, timeout=3.0):
+    start_t = time.perf_counter()
+    try:
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "Mozilla/5.0"}
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            resp.read(64)
+        ms = int((time.perf_counter() - start_t) * 1000)
+        return True, ms
+    except Exception:
+        return False, 0
+
+
+def check_tcp_ping(host, port=443, timeout=2.5):
+    start_t = time.perf_counter()
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            pass
+        ms = int((time.perf_counter() - start_t) * 1000)
+        return True, ms
+    except Exception:
+        return False, 0
+
+
+def create_tray_icon_image(active=False):
+    img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    bg_color = (27, 138, 46, 255) if active else (201, 42, 42, 255)
+    draw.ellipse((4, 4, 60, 60), fill=bg_color)
+    draw.polygon([(26, 20), (46, 32), (26, 44)], fill=(255, 255, 255, 255))
+    return img
+
+
+class PingTestWindow(tk.Toplevel):
+
+    def __init__(self, parent, app):
+        super().__init__(parent)
+        self.app = app
+        self.title(self.app.tr("ping_title"))
+        self.geometry("420x280")
+        self.resizable(False, False)
+
+        self.transient(parent)
+        self.grab_set()
+
+        self.targets = [
+            ("YouTube (HTTPS)", "url", "https://youtube.com"),
+            ("Discord (HTTPS)", "url", "https://discord.com"),
+            ("Google (HTTPS)", "url", "https://google.com"),
+            ("Cloudflare DNS (1.1.1.1)", "tcp", ("1.1.1.1", 443)),
+        ]
+        self.result_labels = {}
+
+        self.setup_ui()
+        self.apply_theme()
+        self.run_tests()
+
+    def setup_ui(self):
+        main_frame = ttk.Frame(self, padding="15")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        for name, _, _ in self.targets:
+            row = ttk.Frame(main_frame)
+            row.pack(fill=tk.X, pady=6)
+            ttk.Label(row, text=name, font=("Segoe UI", 10)).pack(side=tk.LEFT)
+            res_lbl = ttk.Label(
+                row,
+                text=self.app.tr("ping_checking"),
+                font=("Segoe UI", 10, "bold"),
+            )
+            res_lbl.pack(side=tk.RIGHT)
+            self.result_labels[name] = res_lbl
+
+        self.run_btn = ttk.Button(
+            main_frame, text=self.app.tr("ping_btn_run"), command=self.run_tests
+        )
+        self.run_btn.pack(fill=tk.X, pady=(18, 0), ipady=5)
+
+    def apply_theme(self):
+        t = THEMES[self.app.get_effective_theme()]
+        self.configure(bg=t["bg"])
+
+    def run_tests(self):
+        self.run_btn.config(state=tk.DISABLED)
+        t = THEMES[self.app.get_effective_theme()]
+        for name in self.result_labels:
+            self.result_labels[name].config(
+                text=self.app.tr("ping_checking"), foreground=t["sub_fg"]
+            )
+        threading.Thread(target=self._worker, daemon=True).start()
+
+    def _worker(self):
+        t = THEMES[self.app.get_effective_theme()]
+        for name, mode, target in self.targets:
+            if mode == "url":
+                ok, ms = check_url_ping(target)
+            else:
+                ok, ms = check_tcp_ping(target[0], target[1])
+
+            if ok:
+                txt = self.app.tr("ping_ok").format(ms=ms)
+                color = t["active_green"]
+            else:
+                txt = self.app.tr("ping_fail")
+                color = t["stopped_red"]
+
+            try:
+                self.result_labels[name].config(text=txt, foreground=color)
+            except Exception:
+                return
+        try:
+            self.run_btn.config(state=tk.NORMAL)
+        except Exception:
+            pass
+class ListsEditorWindow(tk.Toplevel):
+
+    def __init__(self, parent, app, lists_dir):
+        super().__init__(parent)
+        self.app = app
+        self.lists_dir = lists_dir
+        self.title(self.app.tr("lists_title"))
+        self.geometry("600x460")
+        self.minsize(480, 350)
+
+        self.transient(parent)
+        self.grab_set()
+
+        self.files = sorted(
+            [f for f in os.listdir(lists_dir) if f.lower().endswith(".txt")]
+        )
+        self.setup_ui()
+        self.apply_theme()
+        if self.files:
+            self.load_selected_file()
+
+    def setup_ui(self):
+        main_frame = ttk.Frame(self, padding="12")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        top_row = ttk.Frame(main_frame)
+        top_row.pack(fill=tk.X, pady=(0, 8))
+
+        ttk.Label(top_row, text=self.app.tr("lists_select")).pack(
+            side=tk.LEFT, padx=(0, 8)
+        )
+        self.file_var = tk.StringVar()
+        self.file_combo = ttk.Combobox(
+            top_row,
+            textvariable=self.file_var,
+            state="readonly",
+            values=self.files,
+        )
+        self.file_combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        if self.files:
+            self.file_combo.current(0)
+        self.file_combo.bind(
+            "<<ComboboxSelected>>", lambda e: self.load_selected_file()
+        )
+
+        text_frame = ttk.Frame(main_frame)
+        text_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+
+        scrollbar = ttk.Scrollbar(text_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.text_area = tk.Text(
+            text_frame,
+            wrap=tk.NONE,
+            font=("Consolas", 10),
+            yscrollcommand=scrollbar.set,
+            undo=True,
+        )
+        self.text_area.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=self.text_area.yview)
+
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(fill=tk.X)
+
+        save_btn = ttk.Button(
+            btn_frame,
+            text=self.app.tr("lists_save"),
+            command=self.save_selected_file,
+        )
+        save_btn.pack(side=tk.LEFT, ipady=4)
+
+        close_btn = ttk.Button(
+            btn_frame, text=self.app.tr("hosts_close"), command=self.destroy
+        )
+        close_btn.pack(side=tk.RIGHT, ipady=4)
+
+    def apply_theme(self):
+        t = THEMES[self.app.get_effective_theme()]
+        self.configure(bg=t["bg"])
+        self.text_area.configure(
+            bg=t["entry_bg"], fg=t["entry_fg"], insertbackground=t["fg"]
+        )
+
+    def load_selected_file(self):
+        fname = self.file_var.get()
+        if not fname:
+            return
+        fpath = os.path.join(self.lists_dir, fname)
+        try:
+            with open(fpath, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+            self.text_area.delete("1.0", tk.END)
+            self.text_area.insert("1.0", content)
+        except Exception as e:
+            messagebox.showerror(self.app.tr("err_title"), str(e))
+
+    def save_selected_file(self):
+        fname = self.file_var.get()
+        if not fname:
+            return
+        fpath = os.path.join(self.lists_dir, fname)
+        content = self.text_area.get("1.0", tk.END)
+        if content.endswith("\n"):
+            content = content[:-1]
+
+        try:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(content)
+
+            if self.app.check_winws_running():
+                self.app.start_strategy()
+
+            messagebox.showinfo(
+                self.app.tr("done_title"), self.app.tr("lists_saved_msg")
+            )
+        except Exception as e:
+            messagebox.showerror(self.app.tr("err_title"), str(e))
 
 
 class DnsSettingsWindow(tk.Toplevel):
@@ -386,186 +713,6 @@ class DnsSettingsWindow(tk.Toplevel):
             "ip",
             "set",
             "dns",
-            f'name="{adapter}"',
-            "static",
-            dns1,
-        ])
-        if dns2:
-            run_hidden([
-                "netsh",
-                "interface",
-                "ip",
-                "add",
-                "dns",
-                f'name="{adapter}"',
-                dns2,
-                "index=2",
-            ])
-
-        run_hidden(["ipconfig", "/flushdns"])
-        self.update_current_dns_info()
-        messagebox.showinfo(
-            self.app.tr("done_title"),
-            self.app.tr("dns_applied_msg").format(adapter=adapter),
-        )
-
-    def reset_dns(self):
-        adapter = self.adapter_var.get()
-        run_hidden([
-            "netsh",
-            "interface",
-            "ip",
-            "set",
-            "dns",
-            f'name="{adapter}"',
-            "dhcp",
-        ])
-        run_hidden(["ipconfig", "/flushdns"])
-        self.update_current_dns_info()
-        messagebox.showinfo(
-            self.app.tr("done_title"),
-            self.app.tr("dns_reset_msg").format(adapter=adapter),
-        )
-class HostsEditorWindow(tk.Toplevel):
-
-    def __init__(self, parent, app):
-        super().__init__(parent)
-        self.app = app
-        self.title(self.app.tr("hosts_title"))
-        self.geometry("620x460")
-        self.minsize(500, 350)
-
-        self.transient(parent)
-        self.grab_set()
-
-        self.setup_ui()
-        self.apply_theme()
-        self.load_hosts()
-
-    def setup_ui(self):
-        main_frame = ttk.Frame(self, padding="12")
-        main_frame.pack(fill=tk.BOTH, expand=True)
-
-        info_label = ttk.Label(
-            main_frame,
-            text=self.app.tr("hosts_path_info").format(path=HOSTS_PATH),
-            font=("Segoe UI", 9),
-        )
-        info_label.pack(anchor=tk.W, pady=(0, 8))
-
-        text_frame = ttk.Frame(main_frame)
-        text_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
-
-        scrollbar = ttk.Scrollbar(text_frame)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        self.text_area = tk.Text(
-            text_frame,
-            wrap=tk.NONE,
-            font=("Consolas", 10),
-            yscrollcommand=scrollbar.set,
-            undo=True,
-        )
-        self.text_area.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.config(command=self.text_area.yview)
-
-        btn_frame = ttk.Frame(main_frame)
-        btn_frame.pack(fill=tk.X)
-
-        save_btn = ttk.Button(
-            btn_frame, text=self.app.tr("hosts_save"), command=self.save_hosts
-        )
-        save_btn.pack(side=tk.LEFT, ipady=4, padx=(0, 8))
-
-        reload_btn = ttk.Button(
-            btn_frame, text=self.app.tr("hosts_reload"), command=self.load_hosts
-        )
-        reload_btn.pack(side=tk.LEFT, ipady=4, padx=(0, 8))
-
-        close_btn = ttk.Button(
-            btn_frame, text=self.app.tr("hosts_close"), command=self.destroy
-        )
-        close_btn.pack(side=tk.RIGHT, ipady=4)
-
-    def apply_theme(self):
-        t = THEMES[self.app.get_effective_theme()]
-        self.configure(bg=t["bg"])
-        self.text_area.configure(
-            bg=t["entry_bg"], fg=t["entry_fg"], insertbackground=t["fg"]
-        )
-
-    def load_hosts(self):
-        try:
-            with open(HOSTS_PATH, "r", encoding="utf-8", errors="replace") as f:
-                content = f.read()
-            self.text_area.delete("1.0", tk.END)
-            self.text_area.insert("1.0", content)
-        except Exception as e:
-            messagebox.showerror(
-                self.app.tr("err_title"),
-                self.app.tr("hosts_err_read").format(err=e),
-            )
-
-    def save_hosts(self):
-        content = self.text_area.get("1.0", tk.END)
-        if content.endswith("\n"):
-            content = content[:-1]
-
-        try:
-            with open(HOSTS_PATH, "w", encoding="utf-8") as f:
-                f.write(content)
-
-            run_hidden(["ipconfig", "/flushdns"])
-            messagebox.showinfo(
-                self.app.tr("done_title"), self.app.tr("hosts_saved_msg")
-            )
-        except PermissionError:
-            messagebox.showerror(
-                self.app.tr("err_title"), self.app.tr("hosts_err_perm")
-            )
-        except Exception as e:
-            messagebox.showerror(
-                self.app.tr("err_title"),
-                self.app.tr("hosts_err_save").format(err=e),
-            )
-class ZapretLauncherApp:
-
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Zapret Universal GUI")
-        self.root.geometry("440x445")
-        self.root.resizable(False, False)
-
-        if getattr(sys, "frozen", False):
-            self.base_dir = os.path.dirname(sys.executable)
-        else:
-            self.base_dir = os.path.dirname(os.path.abspath(__file__))
-
-        self.lang = "ru"
-        self.theme_mode = "system"
-        self.active_process = None
-        self.is_running = True
-
-        self.style = ttk.Style()
-        self.style.theme_use("clam")
-
-        self.setup_ui()
-        self.apply_theme()
-        self.load_strategies()
-
-        self.status_thread = threading.Thread(
-            target=self.monitor_status, daemon=True
-        )
-        self.status_thread.start()
-
-    def tr(self, key):
-        return LANGS[self.lang].get(key, key)
-
-    def get_effective_theme(self):
-        if self.theme_mode == "system":
-            return get_system_theme()
-        return self.theme_mode
-
     def setup_ui(self):
         main_frame = ttk.Frame(self.root, padding="15")
         main_frame.pack(fill=tk.BOTH, expand=True)
@@ -576,7 +723,9 @@ class ZapretLauncherApp:
         self.lang_lbl = ttk.Label(top_bar, text=self.tr("lang_label"))
         self.lang_lbl.pack(side=tk.LEFT, padx=(0, 4))
 
-        self.lang_var = tk.StringVar(value="Русский")
+        self.lang_var = tk.StringVar(
+            value="English" if self.lang == "en" else "Русский"
+        )
         self.lang_combo = ttk.Combobox(
             top_bar,
             textvariable=self.lang_var,
@@ -605,7 +754,7 @@ class ZapretLauncherApp:
         self.status_frame = ttk.LabelFrame(
             main_frame, text=self.tr("status_box"), padding="10"
         )
-        self.status_frame.pack(fill=tk.X, pady=(0, 12))
+        self.status_frame.pack(fill=tk.X, pady=(0, 10))
 
         self.status_label = ttk.Label(
             self.status_frame,
@@ -617,16 +766,19 @@ class ZapretLauncherApp:
         self.strat_frame = ttk.LabelFrame(
             main_frame, text=self.tr("strat_box"), padding="10"
         )
-        self.strat_frame.pack(fill=tk.X, pady=(0, 12))
+        self.strat_frame.pack(fill=tk.X, pady=(0, 10))
 
         self.strategy_var = tk.StringVar()
         self.strategy_combo = ttk.Combobox(
             self.strat_frame, textvariable=self.strategy_var, state="readonly"
         )
         self.strategy_combo.pack(fill=tk.X)
+        self.strategy_combo.bind(
+            "<<ComboboxSelected>>", lambda e: self.save_config()
+        )
 
         btn_frame = ttk.Frame(main_frame)
-        btn_frame.pack(fill=tk.X, pady=(0, 12))
+        btn_frame.pack(fill=tk.X, pady=(0, 6))
 
         self.start_btn = ttk.Button(
             btn_frame, text=self.tr("btn_start"), command=self.start_strategy
@@ -642,6 +794,53 @@ class ZapretLauncherApp:
             side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0), ipady=5
         )
 
+        diag_frame = ttk.Frame(main_frame)
+        diag_frame.pack(fill=tk.X, pady=(0, 4))
+
+        self.auto_btn = ttk.Button(
+            diag_frame,
+            text=self.tr("btn_auto"),
+            command=self.toggle_auto_search,
+        )
+        self.auto_btn.pack(
+            side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5), ipady=4
+        )
+
+        self.ping_btn = ttk.Button(
+            diag_frame,
+            text=self.tr("btn_ping"),
+            command=self.open_ping_window,
+        )
+        self.ping_btn.pack(
+            side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0), ipady=4
+        )
+
+        self.auto_status_lbl = ttk.Label(
+            main_frame, text="", font=("Segoe UI", 8.5)
+        )
+        self.auto_status_lbl.pack(anchor=tk.W, pady=(0, 6))
+
+        self.auto_frame = ttk.LabelFrame(
+            main_frame, text=self.tr("autostart_box"), padding="8"
+        )
+        self.auto_frame.pack(fill=tk.X, pady=(0, 10))
+
+        self.chk_win = ttk.Checkbutton(
+            self.auto_frame,
+            text=self.tr("chk_win_start"),
+            variable=self.win_autostart_var,
+            command=self.on_win_autostart_toggle,
+        )
+        self.chk_win.pack(anchor=tk.W, pady=(0, 3))
+
+        self.chk_bypass = ttk.Checkbutton(
+            self.auto_frame,
+            text=self.tr("chk_auto_bypass"),
+            variable=self.auto_bypass_var,
+            command=self.save_config,
+        )
+        self.chk_bypass.pack(anchor=tk.W)
+
         self.tools_frame = ttk.LabelFrame(
             main_frame, text=self.tr("tools_box"), padding="10"
         )
@@ -650,32 +849,55 @@ class ZapretLauncherApp:
         row1 = ttk.Frame(self.tools_frame)
         row1.pack(fill=tk.X, pady=(0, 6))
 
+        self.lists_edit_btn = ttk.Button(
+            row1,
+            text=self.tr("btn_lists_edit"),
+            command=self.open_lists_editor,
+        )
+        self.lists_edit_btn.pack(
+            side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5)
+        )
+
+        self.lists_dir_btn = ttk.Button(
+            row1, text=self.tr("btn_lists_dir"), command=self.open_lists_dir
+        )
+        self.lists_dir_btn.pack(
+            side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0)
+        )
+
+        row2 = ttk.Frame(self.tools_frame)
+        row2.pack(fill=tk.X, pady=(0, 6))
+
+        self.hosts_btn = ttk.Button(
+            row2, text=self.tr("btn_hosts"), command=self.open_hosts_editor
+        )
+        self.hosts_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+
+        self.dns_btn = ttk.Button(
+            row2, text=self.tr("btn_dns"), command=self.open_dns_settings
+        )
+        self.dns_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0))
+
+        row3 = ttk.Frame(self.tools_frame)
+        row3.pack(fill=tk.X)
+
         self.service_btn = ttk.Button(
-            row1, text=self.tr("btn_service"), command=self.open_service
+            row3, text=self.tr("btn_service"), command=self.open_service
         )
         self.service_btn.pack(
             side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5)
         )
 
-        self.lists_btn = ttk.Button(
-            row1, text=self.tr("btn_lists"), command=self.open_lists
+        self.update_btn = ttk.Button(
+            row3,
+            text=self.tr("btn_update"),
+            command=lambda: threading.Thread(
+                target=lambda: self.check_updates(silent=False), daemon=True
+            ).start(),
         )
-        self.lists_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0))
-
-        self.hosts_btn = ttk.Button(
-            self.tools_frame,
-            text=self.tr("btn_hosts"),
-            command=self.open_hosts_editor,
+        self.update_btn.pack(
+            side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0)
         )
-        self.hosts_btn.pack(fill=tk.X, pady=(0, 6), ipady=3)
-
-        self.dns_btn = ttk.Button(
-            self.tools_frame,
-            text=self.tr("btn_dns"),
-            command=self.open_dns_settings,
-        )
-        self.dns_btn.pack(fill=tk.X, ipady=3)
-
     def update_theme_combo_values(self):
         options = [
             self.tr("theme_system"),
@@ -689,13 +911,20 @@ class ZapretLauncherApp:
 
     def on_lang_selected(self, event=None):
         self.lang = "en" if self.lang_var.get() == "English" else "ru"
+        self.save_config()
         self.update_texts()
+        self.rebuild_tray_menu()
 
     def on_theme_selected(self, event=None):
         idx = self.theme_combo.current()
         modes = ["system", "classic", "light", "dark"]
         self.theme_mode = modes[idx] if 0 <= idx < len(modes) else "system"
+        self.save_config()
         self.apply_theme()
+
+    def on_win_autostart_toggle(self):
+        set_windows_autostart(self.win_autostart_var.get())
+        self.save_config()
 
     def update_texts(self):
         self.lang_lbl.config(text=self.tr("lang_label"))
@@ -705,11 +934,23 @@ class ZapretLauncherApp:
         self.strat_frame.config(text=self.tr("strat_box"))
         self.start_btn.config(text=self.tr("btn_start"))
         self.stop_btn.config(text=self.tr("btn_stop"))
+        self.auto_btn.config(
+            text=self.tr(
+                "btn_auto_stop" if self.auto_searching else "btn_auto"
+            )
+        )
+        self.ping_btn.config(text=self.tr("btn_ping"))
+        self.auto_frame.config(text=self.tr("autostart_box"))
+        self.chk_win.config(text=self.tr("chk_win_start"))
+        self.chk_bypass.config(text=self.tr("chk_auto_bypass"))
         self.tools_frame.config(text=self.tr("tools_box"))
-        self.service_btn.config(text=self.tr("btn_service"))
-        self.lists_btn.config(text=self.tr("btn_lists"))
+        self.lists_edit_btn.config(text=self.tr("btn_lists_edit"))
+        self.lists_dir_btn.config(text=self.tr("btn_lists_dir"))
         self.hosts_btn.config(text=self.tr("btn_hosts"))
         self.dns_btn.config(text=self.tr("btn_dns"))
+        self.service_btn.config(text=self.tr("btn_service"))
+        if not self.latest_github_url:
+            self.update_btn.config(text=self.tr("btn_update"))
         self.refresh_status_once()
 
     def apply_theme(self):
@@ -718,6 +959,11 @@ class ZapretLauncherApp:
         self.root.configure(bg=t["bg"])
         self.style.configure("TFrame", background=t["bg"])
         self.style.configure("TLabel", background=t["bg"], foreground=t["fg"])
+        self.style.configure(
+            "TCheckbutton", background=t["bg"], foreground=t["fg"]
+        )
+        self.style.map("TCheckbutton", background=[("active", t["bg"])])
+        self.auto_status_lbl.configure(foreground=t["sub_fg"])
         self.style.configure(
             "TLabelframe", background=t["bg"], foreground=t["fg"]
         )
@@ -750,7 +996,6 @@ class ZapretLauncherApp:
             foreground=t["entry_fg"],
         )
         self.refresh_status_once()
-
     def load_strategies(self):
         strategies = []
         for file in os.listdir(self.base_dir):
@@ -760,14 +1005,20 @@ class ZapretLauncherApp:
                 strategies.append(file)
 
         strategies.sort()
+        self.strategies_list = strategies
 
         if strategies:
             self.strategy_combo["values"] = strategies
-            self.strategy_combo.current(0)
+            saved_strat = self.config.get("last_strategy", "")
+            if saved_strat in strategies:
+                self.strategy_var.set(saved_strat)
+            else:
+                self.strategy_combo.current(0)
         else:
             self.strategy_combo["values"] = [self.tr("no_scripts")]
             self.strategy_combo.current(0)
             self.start_btn.config(state=tk.DISABLED)
+            self.auto_btn.config(state=tk.DISABLED)
 
     def check_winws_running(self):
         try:
@@ -779,7 +1030,8 @@ class ZapretLauncherApp:
 
     def refresh_status_once(self):
         t = THEMES[self.get_effective_theme()]
-        if self.check_winws_running():
+        active = self.check_winws_running()
+        if active:
             self.status_label.config(
                 text=self.tr("status_active"), foreground=t["active_green"]
             )
@@ -787,11 +1039,43 @@ class ZapretLauncherApp:
             self.status_label.config(
                 text=self.tr("status_stopped"), foreground=t["stopped_red"]
             )
+        if self.tray_icon and self.last_tray_state != active:
+            self.last_tray_state = active
+            self.tray_icon.icon = create_tray_icon_image(active)
 
     def monitor_status(self):
         while self.is_running:
             self.refresh_status_once()
             time.sleep(1.5)
+
+    def _launch_bat_hidden(self, bat_path):
+        self.stop_zapret(silent=True)
+        time.sleep(0.5)
+
+        with open(bat_path, "r", encoding="utf-8", errors="ignore") as f:
+            bat_content = f.read()
+
+        hidden_content = re.sub(
+            r"(?i)\bstart\s+(?!/)", "start /B ", bat_content
+        )
+
+        temp_bat = os.path.join(self.base_dir, "_temp_hidden_run.bat")
+        with open(temp_bat, "w", encoding="utf-8") as f:
+            f.write(hidden_content)
+
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = 0
+
+        self.active_process = subprocess.Popen(
+            ["cmd.exe", "/c", temp_bat],
+            cwd=self.base_dir,
+            startupinfo=startupinfo,
+            creationflags=0x08000000,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
     def start_strategy(self):
         selected = self.strategy_var.get()
@@ -804,38 +1088,86 @@ class ZapretLauncherApp:
             )
             return
 
-        self.stop_zapret(silent=True)
-        time.sleep(0.5)
-
+        self.save_config()
         try:
-            with open(bat_path, "r", encoding="utf-8", errors="ignore") as f:
-                bat_content = f.read()
-
-            hidden_content = re.sub(
-                r"(?i)\bstart\s+(?!/)", "start /B ", bat_content
-            )
-
-            temp_bat = os.path.join(self.base_dir, "_temp_hidden_run.bat")
-            with open(temp_bat, "w", encoding="utf-8") as f:
-                f.write(hidden_content)
-
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = 0
-
-            self.active_process = subprocess.Popen(
-                ["cmd.exe", "/c", temp_bat],
-                cwd=self.base_dir,
-                startupinfo=startupinfo,
-                creationflags=0x08000000,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
+            self._launch_bat_hidden(bat_path)
         except Exception as e:
             messagebox.showerror(self.tr("err_start"), str(e))
 
+    def toggle_auto_search(self):
+        if self.auto_searching:
+            self.auto_searching = False
+            self.auto_btn.config(text=self.tr("btn_auto"))
+            self.auto_status_lbl.config(text=self.tr("auto_stopped"))
+            return
+
+        if not self.strategies_list:
+            return
+
+        self.auto_searching = True
+        self.auto_btn.config(text=self.tr("btn_auto_stop"))
+        self.start_btn.config(state=tk.DISABLED)
+        threading.Thread(target=self._auto_search_worker, daemon=True).start()
+
+    def _auto_search_worker(self):
+        total = len(self.strategies_list)
+        found = None
+
+        for idx, name in enumerate(self.strategies_list, start=1):
+            if not self.auto_searching or not self.is_running:
+                break
+
+            self.strategy_var.set(name)
+            self.auto_status_lbl.config(
+                text=self.tr("auto_testing").format(
+                    idx=idx, total=total, name=name
+                )
+            )
+            bat_path = os.path.join(self.base_dir, name)
+            try:
+                self._launch_bat_hidden(bat_path)
+            except Exception:
+                continue
+
+            time.sleep(2.5)
+            if not self.auto_searching:
+                break
+
+            ok_yt, _ = check_url_ping(
+                "https://youtube.com", timeout=3.0
+            )
+            ok_dc, _ = check_url_ping(
+                "https://discord.com", timeout=3.0
+            )
+            if ok_yt or ok_dc:
+                found = name
+                break
+
+        was_running = self.auto_searching
+        self.auto_searching = False
+        try:
+            self.auto_btn.config(text=self.tr("btn_auto"))
+            self.start_btn.config(state=tk.NORMAL)
+            if was_running:
+                if found:
+                    self.save_config()
+                    self.auto_status_lbl.config(text=f"✅ {found}")
+                    messagebox.showinfo(
+                        self.tr("done_title"),
+                        self.tr("auto_found").format(name=found),
+                    )
+                else:
+                    self.stop_zapret(silent=True)
+                    self.auto_status_lbl.config(
+                        text=self.tr("auto_not_found")
+                    )
+                    messagebox.showwarning(
+                        self.tr("warn_title"), self.tr("auto_not_found")
+                    )
+        except Exception:
+            pass
     def stop_zapret(self, silent=False):
+        self.auto_searching = False
         try:
             run_hidden(["sc", "stop", "zapret"])
             run_hidden(["sc", "stop", "GoodbyeDPI"])
@@ -844,6 +1176,72 @@ class ZapretLauncherApp:
         except Exception as e:
             if not silent:
                 messagebox.showerror(self.tr("err_stop"), str(e))
+
+    def check_updates(self, silent=True):
+        if self.latest_github_url and not silent:
+            webbrowser.open(self.latest_github_url)
+            return
+
+        url = f"https://github.com{GITHUB_REPO}/releases/latest"
+        try:
+            req = urllib.request.Request(
+                url, headers={"User-Agent": "ZapretUniversalGUI"}
+            )
+            with urllib.request.urlopen(req, timeout=4.0) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            tag = data.get("tag_name", "").lstrip("vV")
+            html_url = data.get(
+                "html_url", f"https://github.com{GITHUB_REPO}/releases"
+            )
+            if tag and tag != APP_VERSION:
+                self.latest_github_url = html_url
+                self.update_btn.config(
+                    text=self.tr("update_avail").format(ver=tag)
+                )
+                if not silent:
+                    if messagebox.askyesno(
+                        self.tr("done_title"),
+                        self.tr("update_ask").format(ver=tag),
+                    ):
+                        webbrowser.open(html_url)
+            elif not silent:
+                messagebox.showinfo(
+                    self.tr("done_title"),
+                    self.tr("update_latest").format(ver=APP_VERSION),
+                )
+        except Exception:
+            if not silent:
+                messagebox.showwarning(
+                    self.tr("warn_title"), self.tr("update_err")
+                )
+
+    def open_ping_window(self):
+        PingTestWindow(self.root, self)
+
+    def _find_lists_folder(self):
+        for folder in ("lists", "files", "ipset"):
+            lists_path = os.path.join(self.base_dir, folder)
+            if os.path.exists(lists_path):
+                return lists_path
+        return None
+
+    def open_lists_editor(self):
+        lists_path = self._find_lists_folder()
+        if lists_path:
+            ListsEditorWindow(self.root, self, lists_path)
+        else:
+            messagebox.showwarning(
+                self.tr("warn_title"), self.tr("warn_no_lists")
+            )
+
+    def open_lists_dir(self):
+        lists_path = self._find_lists_folder()
+        if lists_path:
+            os.startfile(lists_path)
+        else:
+            messagebox.showwarning(
+                self.tr("warn_title"), self.tr("warn_no_lists")
+            )
 
     def open_service(self):
         for name in ("service.bat", "service_install_russia_blacklist.cmd"):
@@ -858,24 +1256,64 @@ class ZapretLauncherApp:
             self.tr("warn_title"), self.tr("warn_no_service")
         )
 
-    def open_lists(self):
-        for folder in ("lists", "files", "ipset"):
-            lists_path = os.path.join(self.base_dir, folder)
-            if os.path.exists(lists_path):
-                os.startfile(lists_path)
-                return
-        messagebox.showwarning(
-            self.tr("warn_title"), self.tr("warn_no_lists")
-        )
-
     def open_hosts_editor(self):
         HostsEditorWindow(self.root, self)
 
     def open_dns_settings(self):
         DnsSettingsWindow(self.root, self)
 
-    def on_closing(self):
+    def setup_tray_icon(self):
+        active = self.check_winws_running()
+        self.last_tray_state = active
+        menu = self._build_tray_menu()
+        self.tray_icon = pystray.Icon(
+            "ZapretGUI",
+            create_tray_icon_image(active),
+            "Zapret Universal GUI",
+            menu,
+        )
+        threading.Thread(target=self.tray_icon.run, daemon=True).start()
+
+    def _build_tray_menu(self):
+        return pystray.Menu(
+            pystray.MenuItem(
+                self.tr("tray_open"), self.show_from_tray, default=True
+            ),
+            pystray.MenuItem(
+                self.tr("tray_start"),
+                lambda: self.root.after(0, self.start_strategy),
+            ),
+            pystray.MenuItem(
+                self.tr("tray_stop"),
+                lambda: self.root.after(0, self.stop_zapret),
+            ),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem(
+                self.tr("tray_exit"), lambda: self.root.after(0, self.quit_app)
+            ),
+        )
+
+    def rebuild_tray_menu(self):
+        if self.tray_icon:
+            self.tray_icon.menu = self._build_tray_menu()
+
+    def hide_to_tray(self):
+        self.root.withdraw()
+
+    def show_from_tray(self):
+        self.root.after(0, self._restore_window)
+
+    def _restore_window(self):
+        self.root.deiconify()
+        self.root.lift()
+        self.root.focus_force()
+
+    def quit_app(self):
         self.is_running = False
+        self.auto_searching = False
+        self.save_config()
+        if self.tray_icon:
+            self.tray_icon.stop()
         self.root.destroy()
 
 
@@ -886,5 +1324,5 @@ if __name__ == "__main__":
 
     root = tk.Tk()
     app = ZapretLauncherApp(root)
-    root.protocol("WM_DELETE_WINDOW", app.on_closing)
+    root.protocol("WM_DELETE_WINDOW", app.hide_to_tray)
     root.mainloop()
