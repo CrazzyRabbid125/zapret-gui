@@ -499,7 +499,7 @@ class ZapretLauncherApp:
                     text="● ОСТАНОВЛЕН", foreground="#c92a2a"
                 )
             time.sleep(1.5)
-
+            
     def start_strategy(self):
         selected = self.strategy_var.get()
         bat_path = os.path.join(self.base_dir, selected)
@@ -514,81 +514,25 @@ class ZapretLauncherApp:
         time.sleep(0.5)
 
         try:
+            # Читаем содержимое выбранного .bat файла
+            with open(bat_path, "r", encoding="utf-8", errors="ignore") as f:
+                bat_content = f.read()
+
+            # Заменяем команду 'start ' на 'start /B ', чтобы winws.exe не открывал черное окно
+            hidden_content = re.sub(
+                r"(?i)\bstart\s+(?!/)", "start /B ", bat_content
+            )
+
+            temp_bat = os.path.join(self.base_dir, "_temp_hidden_run.bat")
+            with open(temp_bat, "w", encoding="utf-8") as f:
+                f.write(hidden_content)
+
             startupinfo = subprocess.STARTUPINFO()
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = 0
+
             self.active_process = subprocess.Popen(
-                ["cmd.exe", "/c", bat_path],
-                cwd=self.base_dir,
-                startupinfo=startupinfo,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
-        except Exception as e:
-            messagebox.showerror("Ошибка запуска", str(e))
-
-    def stop_zapret(self, silent=False):
-        try:
-            run_hidden(["sc", "stop", "zapret"])
-            run_hidden(["taskkill", "/F", "/IM", "winws.exe"])
-        except Exception as e:
-            if not silent:
-                messagebox.showerror("Ошибка остановки", str(e))
-
-    def open_service(self):
-        service_path = os.path.join(self.base_dir, "service.bat")
-        if os.path.exists(service_path):
-            subprocess.Popen(
-                ["cmd.exe", "/c", "start", "", service_path], cwd=self.base_dir
-            )
-        else:
-            messagebox.showwarning("Внимание", "Файл service.bat не найден.")
-
-    def open_lists(self):
-        lists_path = os.path.join(self.base_dir, "lists")
-        if os.path.exists(lists_path):
-            os.startfile(lists_path)
-        else:
-            messagebox.showwarning("Внимание", "Папка lists не найдена.")
-
-    def open_hosts_editor(self):
-        HostsEditorWindow(self.root)
-
-    def open_dns_settings(self):
-        DnsSettingsWindow(self.root)
-
-    def on_closing(self):
-        self.is_running = False
-        self.root.destroy()
-        
-if __name__ == "__main__":
-    if not is_admin():
-        run_as_admin()
-        sys.exit(0)
-
-    root = tk.Tk()
-    app = ZapretLauncherApp(root)
-    root.protocol("WM_DELETE_WINDOW", app.on_closing)
-    root.mainloop()
-    def start_strategy(self):
-        selected = self.strategy_var.get()
-        bat_path = os.path.join(self.base_dir, selected)
-
-        if not os.path.exists(bat_path):
-            messagebox.showerror(
-                "Ошибка", f"Файл {selected} не найден в папке программы."
-            )
-            return
-
-        self.stop_zapret(silent=True)
-        time.sleep(0.5)
-
-        try:
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = 0  # SW_HIDE — полностью скрыть окно
-
-            # Флаг CREATE_NO_WINDOW (0x08000000) запрещает создание консольного окна для дочерних процессов
-            self.active_process = subprocess.Popen(
-                ["cmd.exe", "/c", bat_path],
+                ["cmd.exe", "/c", temp_bat],
                 cwd=self.base_dir,
                 startupinfo=startupinfo,
                 creationflags=0x08000000,
@@ -598,5 +542,3 @@ if __name__ == "__main__":
             )
         except Exception as e:
             messagebox.showerror("Ошибка запуска", str(e))
-
-
