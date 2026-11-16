@@ -1,4 +1,3 @@
-python
 import ctypes
 import os
 import re
@@ -326,205 +325,249 @@ class HostsEditorWindow(tk.Toplevel):
 
         close_btn = ttk.Button(btn_frame, text="Закрыть", command=self.destroy)
         close_btn.pack(side=tk.RIGHT, ipady=4)
-def load_hosts(self):
-try:
-with open(HOSTS_PATH, "r", encoding="utf-8", errors="replace") as f:
-content = f.read()
-self.text_area.delete("1.0", tk.END)
-self.text_area.insert("1.0", content)
-except Exception as e:
-messagebox.showerror(
-"Ошибка чтения", f"Не удалось открыть файл hosts:\n{e}"
-)
-def save_hosts(self):
-content = self.text_area.get("1.0", tk.END)
-if content.endswith("\n"):
-content = content[:-1]
-try:
-with open(HOSTS_PATH, "w", encoding="utf-8") as f:
-f.write(content)
-run_hidden(["ipconfig", "/flushdns"])
-messagebox.showinfo(
-"Готово", "Файл hosts успешно сохранен, а кэш DNS обновлен!"
-)
-except PermissionError:
-messagebox.showerror(
-"Ошибка доступа",
-"Недостаточно прав для записи в hosts. Проверьте, что антивирус не блокирует изменение файла.",
-)
-except Exception as e:
-messagebox.showerror(
-"Ошибка сохранения", f"Не удалось сохранить файл:\n{e}"
-)
+    def load_hosts(self):
+        try:
+            with open(HOSTS_PATH, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+            self.text_area.delete("1.0", tk.END)
+            self.text_area.insert("1.0", content)
+        except Exception as e:
+            messagebox.showerror(
+                "Ошибка чтения", f"Не удалось открыть файл hosts:\n{e}"
+            )
+    def save_hosts(self):
+        content = self.text_area.get("1.0", tk.END)
+        if content.endswith("\n"):
+            content = content[:-1]
+
+        try:
+            with open(HOSTS_PATH, "w", encoding="utf-8") as f:
+                f.write(content)
+
+            run_hidden(["ipconfig", "/flushdns"])
+            messagebox.showinfo(
+                "Готово", "Файл hosts успешно сохранен, а кэш DNS обновлен!"
+            )
+        except PermissionError:
+            messagebox.showerror(
+                "Ошибка доступа",
+                "Недостаточно прав для записи в hosts. Проверьте, что антивирус не блокирует изменение файла.",
+            )
+        except Exception as e:
+            messagebox.showerror(
+                "Ошибка сохранения", f"Не удалось сохранить файл:\n{e}"
+            )
+
+
 class ZapretLauncherApp:
-def init(self, root):
-self.root = root
-self.root.title("Zapret Flowseal GUI")
-self.root.geometry("430x405")
-self.root.resizable(False, False)
-if getattr(sys, "frozen", False):
-self.base_dir = os.path.dirname(sys.executable)
-else:
-self.base_dir = os.path.dirname(os.path.abspath(file))
-self.active_process = None
-self.is_running = True
-self.setup_ui()
-self.load_strategies()
-self.status_thread = threading.Thread(
-target=self.monitor_status, daemon=True
-)
-self.status_thread.start()
-def setup_ui(self):
-style = ttk.Style()
-style.theme_use("clam")
-main_frame = ttk.Frame(self.root, padding="15")
-main_frame.pack(fill=tk.BOTH, expand=True)
-status_frame = ttk.LabelFrame(
-main_frame, text="Состояние обхода", padding="10"
-)
-status_frame.pack(fill=tk.X, pady=(0, 12))
-self.status_label = ttk.Label(
-status_frame,
-text="Проверка статуса...",
-font=("Segoe UI", 11, "bold"),
-)
-self.status_label.pack(side=tk.LEFT)
-strat_frame = ttk.LabelFrame(
-main_frame, text="Выбор стратегии (.bat)", padding="10"
-)
-strat_frame.pack(fill=tk.X, pady=(0, 12))
-self.strategy_var = tk.StringVar()
-self.strategy_combo = ttk.Combobox(
-strat_frame, textvariable=self.strategy_var, state="readonly"
-)
-self.strategy_combo.pack(fill=tk.X)
-btn_frame = ttk.Frame(main_frame)
-btn_frame.pack(fill=tk.X, pady=(0, 12))
-self.start_btn = ttk.Button(
-btn_frame, text="▶ Запустить", command=self.start_strategy
-)
-self.start_btn.pack(
-side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5), ipady=5
-)
-self.stop_btn = ttk.Button(
-btn_frame, text="⏹ Остановить", command=self.stop_zapret
-)
-self.stop_btn.pack(
-side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0), ipady=5
-)
-tools_frame = ttk.LabelFrame(
-main_frame, text="Инструменты, DNS и файлы", padding="10"
-)
-tools_frame.pack(fill=tk.X)
-row1 = ttk.Frame(tools_frame)
-row1.pack(fill=tk.X, pady=(0, 6))
-service_btn = ttk.Button(
-row1, text="Открыть service.bat", command=self.open_service
-)
-service_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
-lists_btn = ttk.Button(
-row1, text="Папка lists (домены)", command=self.open_lists
-)
-lists_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0))
-hosts_btn = ttk.Button(
-tools_frame,
-text="📝 Редактор файла hosts (Windows)",
-command=self.open_hosts_editor,
-)
-hosts_btn.pack(fill=tk.X, pady=(0, 6), ipady=3)
-dns_btn = ttk.Button(
-tools_frame,
-text="🌐 Настройка DNS (AdGuard, Cloudflare и др.)",
-command=self.open_dns_settings,
-)
-dns_btn.pack(fill=tk.X, ipady=3)
-def load_strategies(self):
-strategies = []
-for file in os.listdir(self.base_dir):
-if file.lower().startswith("general") and file.lower().endswith(
-".bat"
-):
-strategies.append(file)
-strategies.sort()
-if strategies:
-self.strategy_combo["values"] = strategies
-self.strategy_combo.current(0)
-else:
-self.strategy_combo["values"] = ["Файлы general*.bat не найдены"]
-self.strategy_combo.current(0)
-self.start_btn.config(state=tk.DISABLED)
-def check_winws_running(self):
-try:
-res = run_hidden(["tasklist", "/FI", "IMAGENAME eq winws.exe"])
-return "winws.exe" in res.stdout.lower()
-except Exception:
-return False
-def monitor_status(self):
-while self.is_running:
-active = self.check_winws_running()
-if active:
-self.status_label.config(
-text="● АКТИВЕН (winws.exe работает)", foreground="#1b8a2e"
-)
-else:
-self.status_label.config(
-text="● ОСТАНОВЛЕН", foreground="#c92a2a"
-)
-time.sleep(1.5)
-def start_strategy(self):
-selected = self.strategy_var.get()
-bat_path = os.path.join(self.base_dir, selected)
-if not os.path.exists(bat_path):
-messagebox.showerror(
-"Ошибка", f"Файл {selected} не найден в папке программы."
-)
-return
-self.stop_zapret(silent=True)
-time.sleep(0.5)
-try:
-startupinfo = subprocess.STARTUPINFO()
-startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-self.active_process = subprocess.Popen(
-["cmd.exe", "/c", bat_path],
-cwd=self.base_dir,
-startupinfo=startupinfo,
-creationflags=subprocess.CREATE_NO_WINDOW,
-)
-except Exception as e:
-messagebox.showerror("Ошибка запуска", str(e))
-def stop_zapret(self, silent=False):
-try:
-run_hidden(["sc", "stop", "zapret"])
-run_hidden(["taskkill", "/F", "/IM", "winws.exe"])
-except Exception as e:
-if not silent:
-messagebox.showerror("Ошибка остановки", str(e))
-def open_service(self):
-service_path = os.path.join(self.base_dir, "service.bat")
-if os.path.exists(service_path):
-subprocess.Popen(
-["cmd.exe", "/c", "start", "", service_path], cwd=self.base_dir
-)
-else:
-messagebox.showwarning("Внимание", "Файл service.bat не найден.")
-def open_lists(self):
-lists_path = os.path.join(self.base_dir, "lists")
-if os.path.exists(lists_path):
-os.startfile(lists_path)
-else:
-messagebox.showwarning("Внимание", "Папка lists не найдена.")
-def open_hosts_editor(self):
-HostsEditorWindow(self.root)
-def open_dns_settings(self):
-DnsSettingsWindow(self.root)
-def on_closing(self):
-self.is_running = False
-self.root.destroy()
-if name == "main":
-if not is_admin():
-run_as_admin()
-sys.exit(0)
-root = tk.Tk()
-app = ZapretLauncherApp(root)
-root.protocol("WM_DELETE_WINDOW", app.on_closing)
-root.mainloop()
+
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Zapret Flowseal GUI")
+        self.root.geometry("430x405")
+        self.root.resizable(False, False)
+
+        if getattr(sys, "frozen", False):
+            self.base_dir = os.path.dirname(sys.executable)
+        else:
+            self.base_dir = os.path.dirname(os.path.abspath(__file__))
+
+        self.active_process = None
+        self.is_running = True
+
+        self.setup_ui()
+        self.load_strategies()
+
+        self.status_thread = threading.Thread(
+            target=self.monitor_status, daemon=True
+        )
+        self.status_thread.start()
+
+    def setup_ui(self):
+        style = ttk.Style()
+        style.theme_use("clam")
+
+        main_frame = ttk.Frame(self.root, padding="15")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        status_frame = ttk.LabelFrame(
+            main_frame, text="Состояние обхода", padding="10"
+        )
+        status_frame.pack(fill=tk.X, pady=(0, 12))
+
+        self.status_label = ttk.Label(
+            status_frame,
+            text="Проверка статуса...",
+            font=("Segoe UI", 11, "bold"),
+        )
+        self.status_label.pack(side=tk.LEFT)
+
+        strat_frame = ttk.LabelFrame(
+            main_frame, text="Выбор стратегии (.bat)", padding="10"
+        )
+        strat_frame.pack(fill=tk.X, pady=(0, 12))
+
+        self.strategy_var = tk.StringVar()
+        self.strategy_combo = ttk.Combobox(
+            strat_frame, textvariable=self.strategy_var, state="readonly"
+        )
+        self.strategy_combo.pack(fill=tk.X)
+
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(fill=tk.X, pady=(0, 12))
+
+        self.start_btn = ttk.Button(
+            btn_frame, text="▶ Запустить", command=self.start_strategy
+        )
+        self.start_btn.pack(
+            side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5), ipady=5
+        )
+
+        self.stop_btn = ttk.Button(
+            btn_frame, text="⏹ Остановить", command=self.stop_zapret
+        )
+        self.stop_btn.pack(
+            side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0), ipady=5
+        )
+
+        tools_frame = ttk.LabelFrame(
+            main_frame, text="Инструменты, DNS и файлы", padding="10"
+        )
+        tools_frame.pack(fill=tk.X)
+
+        row1 = ttk.Frame(tools_frame)
+        row1.pack(fill=tk.X, pady=(0, 6))
+
+        service_btn = ttk.Button(
+            row1, text="Открыть service.bat", command=self.open_service
+        )
+        service_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+
+        lists_btn = ttk.Button(
+            row1, text="Папка lists (домены)", command=self.open_lists
+        )
+        lists_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0))
+
+        hosts_btn = ttk.Button(
+            tools_frame,
+            text="📝 Редактор файла hosts (Windows)",
+            command=self.open_hosts_editor,
+        )
+        hosts_btn.pack(fill=tk.X, pady=(0, 6), ipady=3)
+
+        dns_btn = ttk.Button(
+            tools_frame,
+            text="🌐 Настройка DNS (AdGuard, Cloudflare и др.)",
+            command=self.open_dns_settings,
+        )
+        dns_btn.pack(fill=tk.X, ipady=3)
+
+    def load_strategies(self):
+        strategies = []
+        for file in os.listdir(self.base_dir):
+            if file.lower().startswith("general") and file.lower().endswith(
+                ".bat"
+            ):
+                strategies.append(file)
+
+        strategies.sort()
+
+        if strategies:
+            self.strategy_combo["values"] = strategies
+            self.strategy_combo.current(0)
+        else:
+            self.strategy_combo["values"] = ["Файлы general*.bat не найдены"]
+            self.strategy_combo.current(0)
+            self.start_btn.config(state=tk.DISABLED)
+
+    def check_winws_running(self):
+        try:
+            res = run_hidden(["tasklist", "/FI", "IMAGENAME eq winws.exe"])
+            return "winws.exe" in res.stdout.lower()
+        except Exception:
+            return False
+
+    def monitor_status(self):
+        while self.is_running:
+            active = self.check_winws_running()
+            if active:
+                self.status_label.config(
+                    text="● АКТИВЕН (winws.exe работает)", foreground="#1b8a2e"
+                )
+            else:
+                self.status_label.config(
+                    text="● ОСТАНОВЛЕН", foreground="#c92a2a"
+                )
+            time.sleep(1.5)
+
+    def start_strategy(self):
+        selected = self.strategy_var.get()
+        bat_path = os.path.join(self.base_dir, selected)
+
+        if not os.path.exists(bat_path):
+            messagebox.showerror(
+                "Ошибка", f"Файл {selected} не найден в папке программы."
+            )
+            return
+
+        self.stop_zapret(silent=True)
+        time.sleep(0.5)
+
+        try:
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            self.active_process = subprocess.Popen(
+                ["cmd.exe", "/c", bat_path],
+                cwd=self.base_dir,
+                startupinfo=startupinfo,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+        except Exception as e:
+            messagebox.showerror("Ошибка запуска", str(e))
+
+    def stop_zapret(self, silent=False):
+        try:
+            run_hidden(["sc", "stop", "zapret"])
+            run_hidden(["taskkill", "/F", "/IM", "winws.exe"])
+        except Exception as e:
+            if not silent:
+                messagebox.showerror("Ошибка остановки", str(e))
+
+    def open_service(self):
+        service_path = os.path.join(self.base_dir, "service.bat")
+        if os.path.exists(service_path):
+            subprocess.Popen(
+                ["cmd.exe", "/c", "start", "", service_path], cwd=self.base_dir
+            )
+        else:
+            messagebox.showwarning("Внимание", "Файл service.bat не найден.")
+
+    def open_lists(self):
+        lists_path = os.path.join(self.base_dir, "lists")
+        if os.path.exists(lists_path):
+            os.startfile(lists_path)
+        else:
+            messagebox.showwarning("Внимание", "Папка lists не найдена.")
+
+    def open_hosts_editor(self):
+        HostsEditorWindow(self.root)
+
+    def open_dns_settings(self):
+        DnsSettingsWindow(self.root)
+
+    def on_closing(self):
+        self.is_running = False
+        self.root.destroy()
+
+
+if __name__ == "__main__":
+    if not is_admin():
+        run_as_admin()
+        sys.exit(0)
+
+    root = tk.Tk()
+    app = ZapretLauncherApp(root)
+    root.protocol("WM_DELETE_WINDOW", app.on_closing)
+    root.mainloop()
+
+
