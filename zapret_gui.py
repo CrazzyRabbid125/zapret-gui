@@ -325,7 +325,8 @@ class HostsEditorWindow(tk.Toplevel):
 
         close_btn = ttk.Button(btn_frame, text="Закрыть", command=self.destroy)
         close_btn.pack(side=tk.RIGHT, ipady=4)
-            def load_hosts(self):
+        
+    def load_hosts(self):
         try:
             with open(HOSTS_PATH, "r", encoding="utf-8", errors="replace") as f:
                 content = f.read()
@@ -586,3 +587,4 @@ if __name__ == "__main__":
     app = ZapretLauncherApp(root)
     root.protocol("WM_DELETE_WINDOW", app.on_closing)
     root.mainloop()
+
