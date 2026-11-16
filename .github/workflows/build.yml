@@ -8,7 +8,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install pyinstaller
+      - run: pip install pyinstaller pystray pillow
       - run: pyinstaller --onefile --noconsole --uac-admin zapret_gui.py
       - uses: actions/upload-artifact@v4
         with:
