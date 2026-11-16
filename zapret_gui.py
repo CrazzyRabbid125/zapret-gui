@@ -813,7 +813,7 @@ class ZapretLauncherApp:
         self.ping_btn = ttk.Button(diag_frame, text=self.tr("btn_ping"), command=self.open_ping_window)
         self.ping_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0), ipady=4)
 
-        self.auto_status_lbl = ttk.Label(main_frame, text="", font=("Segoe UI", 8.5))
+        self.auto_status_lbl = ttk.Label(main_frame, text="", font=("Segoe UI", 9))
         self.auto_status_lbl.pack(anchor=tk.W, pady=(0, 6))
 
         self.auto_frame = ttk.LabelFrame(main_frame, text=self.tr("autostart_box"), padding="8")
