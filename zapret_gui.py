@@ -558,8 +558,7 @@ class ZapretLauncherApp:
     def on_closing(self):
         self.is_running = False
         self.root.destroy()
-
-
+        
 if __name__ == "__main__":
     if not is_admin():
         run_as_admin()
@@ -569,5 +568,35 @@ if __name__ == "__main__":
     app = ZapretLauncherApp(root)
     root.protocol("WM_DELETE_WINDOW", app.on_closing)
     root.mainloop()
+    def start_strategy(self):
+        selected = self.strategy_var.get()
+        bat_path = os.path.join(self.base_dir, selected)
+
+        if not os.path.exists(bat_path):
+            messagebox.showerror(
+                "Ошибка", f"Файл {selected} не найден в папке программы."
+            )
+            return
+
+        self.stop_zapret(silent=True)
+        time.sleep(0.5)
+
+        try:
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = 0  # SW_HIDE — полностью скрыть окно
+
+            # Флаг CREATE_NO_WINDOW (0x08000000) запрещает создание консольного окна для дочерних процессов
+            self.active_process = subprocess.Popen(
+                ["cmd.exe", "/c", bat_path],
+                cwd=self.base_dir,
+                startupinfo=startupinfo,
+                creationflags=0x08000000,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception as e:
+            messagebox.showerror("Ошибка запуска", str(e))
 
 
