@@ -265,8 +265,6 @@ class DnsSettingsWindow(tk.Toplevel):
             "Готово",
             f"Для подключения «{adapter}» возвращено автоматическое получение DNS.",
         )
-
-
 class HostsEditorWindow(tk.Toplevel):
 
     def __init__(self, parent):
@@ -325,7 +323,7 @@ class HostsEditorWindow(tk.Toplevel):
 
         close_btn = ttk.Button(btn_frame, text="Закрыть", command=self.destroy)
         close_btn.pack(side=tk.RIGHT, ipady=4)
-        
+
     def load_hosts(self):
         try:
             with open(HOSTS_PATH, "r", encoding="utf-8", errors="replace") as f:
@@ -365,7 +363,7 @@ class ZapretLauncherApp:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("Zapret Flowseal GUI")
+        self.root.title("Zapret Universal GUI")
         self.root.geometry("430x405")
         self.root.resizable(False, False)
 
@@ -405,7 +403,7 @@ class ZapretLauncherApp:
         self.status_label.pack(side=tk.LEFT)
 
         strat_frame = ttk.LabelFrame(
-            main_frame, text="Выбор стратегии (.bat)", padding="10"
+            main_frame, text="Выбор стратегии (.bat / .cmd)", padding="10"
         )
         strat_frame.pack(fill=tk.X, pady=(0, 12))
 
@@ -446,7 +444,7 @@ class ZapretLauncherApp:
         service_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
 
         lists_btn = ttk.Button(
-            row1, text="Папка lists (домены)", command=self.open_lists
+            row1, text="Папка со списками", command=self.open_lists
         )
         lists_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0))
 
@@ -467,9 +465,9 @@ class ZapretLauncherApp:
     def load_strategies(self):
         strategies = []
         for file in os.listdir(self.base_dir):
-            if file.lower().startswith("general") and file.lower().endswith(
-                ".bat"
-            ):
+            if file.lower().endswith(
+                (".bat", ".cmd")
+            ) and not file.lower().startswith(("service", "_temp")):
                 strategies.append(file)
 
         strategies.sort()
@@ -478,14 +476,15 @@ class ZapretLauncherApp:
             self.strategy_combo["values"] = strategies
             self.strategy_combo.current(0)
         else:
-            self.strategy_combo["values"] = ["Файлы general*.bat не найдены"]
+            self.strategy_combo["values"] = ["Скрипты запуска не найдены"]
             self.strategy_combo.current(0)
             self.start_btn.config(state=tk.DISABLED)
 
     def check_winws_running(self):
         try:
-            res = run_hidden(["tasklist", "/FI", "IMAGENAME eq winws.exe"])
-            return "winws.exe" in res.stdout.lower()
+            res = run_hidden(["tasklist"])
+            out = res.stdout.lower()
+            return "winws.exe" in out or "goodbyedpi.exe" in out
         except Exception:
             return False
 
@@ -494,7 +493,7 @@ class ZapretLauncherApp:
             active = self.check_winws_running()
             if active:
                 self.status_label.config(
-                    text="● АКТИВЕН (winws.exe работает)", foreground="#1b8a2e"
+                    text="● АКТИВЕН (обход работает)", foreground="#1b8a2e"
                 )
             else:
                 self.status_label.config(
@@ -546,26 +545,33 @@ class ZapretLauncherApp:
     def stop_zapret(self, silent=False):
         try:
             run_hidden(["sc", "stop", "zapret"])
+            run_hidden(["sc", "stop", "GoodbyeDPI"])
             run_hidden(["taskkill", "/F", "/IM", "winws.exe"])
+            run_hidden(["taskkill", "/F", "/IM", "goodbyedpi.exe"])
         except Exception as e:
             if not silent:
                 messagebox.showerror("Ошибка остановки", str(e))
 
     def open_service(self):
-        service_path = os.path.join(self.base_dir, "service.bat")
-        if os.path.exists(service_path):
-            subprocess.Popen(
-                ["cmd.exe", "/c", "start", "", service_path], cwd=self.base_dir
-            )
-        else:
-            messagebox.showwarning("Внимание", "Файл service.bat не найден.")
+        for name in ("service.bat", "service_install_russia_blacklist.cmd"):
+            service_path = os.path.join(self.base_dir, name)
+            if os.path.exists(service_path):
+                subprocess.Popen(
+                    ["cmd.exe", "/c", "start", "", service_path],
+                    cwd=self.base_dir,
+                )
+                return
+        messagebox.showwarning(
+            "Внимание", "Файл управления службой не найден."
+        )
 
     def open_lists(self):
-        lists_path = os.path.join(self.base_dir, "lists")
-        if os.path.exists(lists_path):
-            os.startfile(lists_path)
-        else:
-            messagebox.showwarning("Внимание", "Папка lists не найдена.")
+        for folder in ("lists", "files", "ipset"):
+            lists_path = os.path.join(self.base_dir, folder)
+            if os.path.exists(lists_path):
+                os.startfile(lists_path)
+                return
+        messagebox.showwarning("Внимание", "Папка со списками не найдена.")
 
     def open_hosts_editor(self):
         HostsEditorWindow(self.root)
@@ -587,4 +593,3 @@ if __name__ == "__main__":
     app = ZapretLauncherApp(root)
     root.protocol("WM_DELETE_WINDOW", app.on_closing)
     root.mainloop()
-
