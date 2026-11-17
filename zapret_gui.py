@@ -23,6 +23,7 @@ HOSTS_PATH = r"C:\Windows\System32\drivers\etc\hosts"
 DNS_PRESETS = {
     "AdGuard DNS (No Ads)": ("94.140.14.14", "94.140.15.15"),
     "AdGuard DNS (Family)": ("94.140.14.15", "94.140.15.16"),
+    "Comss.one DNS (AI & Geo)": ("83.220.169.155", "212.109.195.93"),
     "Cloudflare (1.1.1.1)": ("1.1.1.1", "1.0.0.1"),
     "Google DNS (8.8.8.8)": ("8.8.8.8", "8.8.4.4"),
     "Yandex.DNS (Basic)": ("77.88.8.8", "77.88.8.1"),
@@ -82,8 +83,8 @@ LANGS = {
         "err_stop": "Ошибка остановки",
         "warn_no_service": "Файл управления службой не найден.",
         "warn_no_lists": "Папка со списками не найдена.",
-        "ping_title": "Пинг и проверка доступности",
-        "ping_btn_run": "🔄 Проверить сейчас",
+        "ping_title": "Пинг и проверка доступности (9 сервисов)",
+        "ping_btn_run": "🔄 Проверить все сейчас",
         "ping_checking": "Проверка...",
         "ping_ok": "Доступен ({ms} мс)",
         "ping_fail": "Недоступен (Таймаут)",
@@ -164,8 +165,8 @@ LANGS = {
         "err_stop": "Stop Error",
         "warn_no_service": "Service management script not found.",
         "warn_no_lists": "Lists folder not found.",
-        "ping_title": "Ping & Connection Test",
-        "ping_btn_run": "🔄 Test Now",
+        "ping_title": "Ping & Connection Test (9 Services)",
+        "ping_btn_run": "🔄 Test All Now",
         "ping_checking": "Testing...",
         "ping_ok": "Online ({ms} ms)",
         "ping_fail": "Unreachable (Timeout)",
@@ -306,7 +307,7 @@ class PingTestWindow(tk.Toplevel):
         super().__init__(parent)
         self.app = app
         self.title(self.app.tr("ping_title"))
-        self.geometry("420x280")
+        self.geometry("440x420")
         self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
@@ -315,6 +316,11 @@ class PingTestWindow(tk.Toplevel):
             ("YouTube (HTTPS)", "url", "https://youtube.com"),
             ("Discord (HTTPS)", "url", "https://discord.com"),
             ("Google (HTTPS)", "url", "https://google.com"),
+            ("Google Gemini (HTTPS)", "url", "https://google.com"),
+            ("ChatGPT / OpenAI (HTTPS)", "url", "https://chatgpt.com"),
+            ("GitHub (HTTPS)", "url", "https://github.com"),
+            ("Telegram Web (HTTPS)", "url", "https://telegram.org"),
+            ("Steam Store (HTTPS)", "url", "https://steampowered.com"),
             ("Cloudflare DNS (1.1.1.1)", "tcp", ("1.1.1.1", 443)),
         ]
         self.result_labels = {}
@@ -328,14 +334,14 @@ class PingTestWindow(tk.Toplevel):
 
         for name, _, _ in self.targets:
             row = ttk.Frame(main_frame)
-            row.pack(fill=tk.X, pady=6)
-            ttk.Label(row, text=name, font=("Segoe UI", 10)).pack(side=tk.LEFT)
-            res_lbl = ttk.Label(row, text=self.app.tr("ping_checking"), font=("Segoe UI", 10, "bold"))
+            row.pack(fill=tk.X, pady=5)
+            ttk.Label(row, text=name, font=("Segoe UI", 9)).pack(side=tk.LEFT)
+            res_lbl = ttk.Label(row, text=self.app.tr("ping_checking"), font=("Segoe UI", 9, "bold"))
             res_lbl.pack(side=tk.RIGHT)
             self.result_labels[name] = res_lbl
 
         self.run_btn = ttk.Button(main_frame, text=self.app.tr("ping_btn_run"), command=self.run_tests)
-        self.run_btn.pack(fill=tk.X, pady=(18, 0), ipady=5)
+        self.run_btn.pack(fill=tk.X, pady=(15, 0), ipady=5)
 
     def apply_theme(self):
         t = THEMES[self.app.get_effective_theme()]
@@ -354,7 +360,7 @@ class PingTestWindow(tk.Toplevel):
             if mode == "url":
                 ok, ms = check_url_ping(target)
             else:
-                ok, ms = check_tcp_ping(target[0], target[1])
+                ok, ms = check_tcp_ping(target, target)
 
             if ok:
                 txt = self.app.tr("ping_ok").format(ms=ms)
@@ -498,13 +504,17 @@ class DnsSettingsWindow(tk.Toplevel):
         left_ip.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
         ttk.Label(left_ip, text=self.app.tr("dns_primary")).pack(anchor=tk.W)
         self.dns1_var = tk.StringVar(value="94.140.14.14")
-        ttk.Entry(left_ip, textvariable=self.dns1_var).pack(fill=tk.X, pady=(2, 0))
+        dns1_entry = ttk.Entry(left_ip, textvariable=self.dns1_var)
+        dns1_entry.pack(fill=tk.X, pady=(2, 0))
+        dns1_entry.bind("<KeyRelease>", self.on_manual_edit)
 
         right_ip = ttk.Frame(ip_frame)
         right_ip.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0))
         ttk.Label(right_ip, text=self.app.tr("dns_secondary")).pack(anchor=tk.W)
         self.dns2_var = tk.StringVar(value="94.140.15.15")
-        ttk.Entry(right_ip, textvariable=self.dns2_var).pack(fill=tk.X, pady=(2, 0))
+        dns2_entry = ttk.Entry(right_ip, textvariable=self.dns2_var)
+        dns2_entry.pack(fill=tk.X, pady=(2, 0))
+        dns2_entry.bind("<KeyRelease>", self.on_manual_edit)
 
         self.current_dns_label = ttk.Label(self.main_frame, text=self.app.tr("dns_curr_check"))
         self.current_dns_label.pack(anchor=tk.W, pady=(0, 14))
@@ -524,19 +534,36 @@ class DnsSettingsWindow(tk.Toplevel):
         self.current_dns_label.configure(foreground=t["sub_fg"])
 
     def load_adapters(self):
-        res = run_hidden(["netsh", "interface", "show", "interface"])
-        lines = res.stdout.splitlines()
         active_adapters = []
         all_adapters = []
 
-        for line in lines:
-            parts = re.split(r"\s{2,}", line.strip())
-            if len(parts) >= 4 and parts[0] in ("Enabled", "Disabled", "Разрешен", "Запрещен"):
-                state = parts[1]
-                name = parts[3]
-                all_adapters.append(name)
-                if state in ("Connected", "Подключено"):
-                    active_adapters.append(name)
+        ps_res = run_hidden(["powershell", "-NoProfile", "-Command", "Get-NetAdapter | Select-Object Name, Status | ConvertTo-Json -Compress"])
+        try:
+            raw = ps_res.stdout.strip()
+            if raw:
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    parsed = [parsed]
+                for item in parsed:
+                    name = item.get("Name", "").strip()
+                    status = str(item.get("Status", "")).strip()
+                    if name:
+                        all_adapters.append(name)
+                        if status == "Up":
+                            active_adapters.append(name)
+        except Exception:
+            pass
+
+        if not all_adapters:
+            res = run_hidden(["netsh", "interface", "show", "interface"])
+            for line in res.stdout.splitlines():
+                parts = re.split(r"\s{2,}", line.strip())
+                if len(parts) >= 4 and parts in ("Enabled", "Disabled", "Разрешен", "Запрещен"):
+                    state = parts
+                    name = parts
+                    all_adapters.append(name)
+                    if state in ("Connected", "Подключено"):
+                        active_adapters.append(name)
 
         self.adapters = active_adapters if active_adapters else all_adapters
         if self.adapters:
@@ -557,11 +584,14 @@ class DnsSettingsWindow(tk.Toplevel):
             self.dns1_var.set(dns1)
             self.dns2_var.set(dns2)
 
+    def on_manual_edit(self, event=None):
+        self.preset_var.set("Custom (Manual)")
+
     def update_current_dns_info(self):
         adapter = self.adapter_var.get()
         if not adapter or adapter == self.app.tr("dns_no_adapters"):
             return
-        res = run_hidden(["netsh", "interface", "ip", "show", "dns", f'name="{adapter}"'])
+        res = run_hidden(["netsh", "interface", "ip", "show", "dns", f"name={adapter}"])
         ips = re.findall(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", res.stdout)
         if ips:
             self.current_dns_label.config(text=self.app.tr("dns_curr_val").format(ips=", ".join(ips)))
@@ -579,6 +609,9 @@ class DnsSettingsWindow(tk.Toplevel):
 
     def apply_dns(self):
         adapter = self.adapter_var.get()
+        if not adapter or adapter == self.app.tr("dns_no_adapters"):
+            return
+
         dns1 = self.dns1_var.get().strip()
         dns2 = self.dns2_var.get().strip()
 
@@ -590,17 +623,26 @@ class DnsSettingsWindow(tk.Toplevel):
             messagebox.showerror(self.app.tr("err_title"), self.app.tr("dns_err_ip2"))
             return
 
-        run_hidden(["netsh", "interface", "ip", "set", "dns", f'name="{adapter}"', "static", dns1])
+        run_hidden(["netsh", "interface", "ip", "set", "dns", f"name={adapter}", "static", dns1])
         if dns2:
-            run_hidden(["netsh", "interface", "ip", "add", "dns", f'name="{adapter}"', dns2, "index=2"])
+            run_hidden(["netsh", "interface", "ip", "add", "dns", f"name={adapter}", dns2, "index=2"])
+            ps_cmd = f'Set-DnsClientServerAddress -InterfaceAlias "{adapter}" -ServerAddresses ("{dns1}","{dns2}")'
+        else:
+            ps_cmd = f'Set-DnsClientServerAddress -InterfaceAlias "{adapter}" -ServerAddresses ("{dns1}")'
 
+        run_hidden(["powershell", "-NoProfile", "-Command", ps_cmd])
         run_hidden(["ipconfig", "/flushdns"])
         self.update_current_dns_info()
         messagebox.showinfo(self.app.tr("done_title"), self.app.tr("dns_applied_msg").format(adapter=adapter))
 
     def reset_dns(self):
         adapter = self.adapter_var.get()
-        run_hidden(["netsh", "interface", "ip", "set", "dns", f'name="{adapter}"', "dhcp"])
+        if not adapter or adapter == self.app.tr("dns_no_adapters"):
+            return
+
+        run_hidden(["netsh", "interface", "ip", "set", "dns", f"name={adapter}", "dhcp"])
+        ps_cmd = f'Set-DnsClientServerAddress -InterfaceAlias "{adapter}" -ResetServerAddresses'
+        run_hidden(["powershell", "-NoProfile", "-Command", ps_cmd])
         run_hidden(["ipconfig", "/flushdns"])
         self.update_current_dns_info()
         messagebox.showinfo(self.app.tr("done_title"), self.app.tr("dns_reset_msg").format(adapter=adapter))
