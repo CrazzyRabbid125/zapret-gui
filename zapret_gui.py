@@ -9,6 +9,7 @@ import threading
 import time
 import tkinter as tk
 from tkinter import messagebox, ttk
+import urllib.error
 import urllib.request
 import webbrowser
 import winreg
@@ -269,25 +270,35 @@ def set_windows_autostart(enable):
         run_hidden(["schtasks", "/Delete", "/TN", task_name, "/F"])
 
 
-def check_url_ping(url, timeout=3.0):
+def check_url_ping(url, timeout=6.0):
     start_t = time.perf_counter()
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+    }
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            resp.read(64)
+            resp.read(32)
         ms = int((time.perf_counter() - start_t) * 1000)
-        return True, ms
+        return True, max(ms, 1)
+    except urllib.error.HTTPError as e:
+        ms = int((time.perf_counter() - start_t) * 1000)
+        if e.code < 500:
+            return True, max(ms, 1)
+        return False, 0
     except Exception:
         return False, 0
 
 
-def check_tcp_ping(host, port=443, timeout=2.5):
+def check_tcp_ping(host, port=443, timeout=4.0):
     start_t = time.perf_counter()
     try:
         with socket.create_connection((host, port), timeout=timeout):
             pass
         ms = int((time.perf_counter() - start_t) * 1000)
-        return True, ms
+        return True, max(ms, 1)
     except Exception:
         return False, 0
 
@@ -356,11 +367,14 @@ class PingTestWindow(tk.Toplevel):
 
     def _worker(self):
         t = THEMES[self.app.get_effective_theme()]
-        for name, mode, target in self.targets:
+        lock = threading.Lock()
+        remaining = [len(self.targets)]
+
+        def test_single(name, mode, target):
             if mode == "url":
-                ok, ms = check_url_ping(target)
+                ok, ms = check_url_ping(target, timeout=6.0)
             else:
-                ok, ms = check_tcp_ping(target, target)
+                ok, ms = check_tcp_ping(target[0], target[1], timeout=4.0)
 
             if ok:
                 txt = self.app.tr("ping_ok").format(ms=ms)
@@ -369,14 +383,26 @@ class PingTestWindow(tk.Toplevel):
                 txt = self.app.tr("ping_fail")
                 color = t["stopped_red"]
 
+            def update_ui():
+                try:
+                    self.result_labels[name].config(text=txt, foreground=color)
+                except Exception:
+                    pass
+                with lock:
+                    remaining[0] -= 1
+                    if remaining[0] <= 0:
+                        try:
+                            self.run_btn.config(state=tk.NORMAL)
+                        except Exception:
+                            pass
+
             try:
-                self.result_labels[name].config(text=txt, foreground=color)
+                self.after(0, update_ui)
             except Exception:
-                return
-        try:
-            self.run_btn.config(state=tk.NORMAL)
-        except Exception:
-            pass
+                pass
+
+        for name, mode, target in self.targets:
+            threading.Thread(target=test_single, args=(name, mode, target), daemon=True).start()
 class ListsEditorWindow(tk.Toplevel):
 
     def __init__(self, parent, app, lists_dir):
@@ -558,9 +584,9 @@ class DnsSettingsWindow(tk.Toplevel):
             res = run_hidden(["netsh", "interface", "show", "interface"])
             for line in res.stdout.splitlines():
                 parts = re.split(r"\s{2,}", line.strip())
-                if len(parts) >= 4 and parts in ("Enabled", "Disabled", "Разрешен", "Запрещен"):
-                    state = parts
-                    name = parts
+                if len(parts) >= 4 and parts[0] in ("Enabled", "Disabled", "Разрешен", "Запрещен"):
+                    state = parts[1]
+                    name = parts[3]
                     all_adapters.append(name)
                     if state in ("Connected", "Подключено"):
                         active_adapters.append(name)
@@ -1074,8 +1100,8 @@ class ZapretLauncherApp:
             if not self.auto_searching:
                 break
 
-            ok_yt, _ = check_url_ping("https://youtube.com", timeout=3.0)
-            ok_dc, _ = check_url_ping("https://discord.com", timeout=3.0)
+            ok_yt, _ = check_url_ping("https://youtube.com", timeout=4.0)
+            ok_dc, _ = check_url_ping("https://discord.com", timeout=4.0)
             if ok_yt or ok_dc:
                 found = name
                 break
